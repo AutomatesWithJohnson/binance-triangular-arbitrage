@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Arbitrage Scanner</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+        h1 { color: #f0f6fc; text-align: center; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #8b949e; margin-bottom: 30px; font-size: 0.9em; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .log-box { height: 500px; overflow-y: auto; background: #010409; padding: 15px; border-radius: 6px; font-family: 'Courier New', Courier, monospace; font-size: 14px; border: 1px solid #30363d; }
+        .log-entry { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #21262d; }
+        .log-entry:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .timestamp { color: #8b949e; font-size: 0.85em; }
+        .route { color: #58a6ff; font-weight: bold; margin-top: 4px; }
+        .profit { color: #3fb950; font-weight: bold; font-size: 1.1em; }
+        .details { color: #b7bacc; margin-top: 4px; font-size: 0.9em; }
+        .sim-tag { display: inline-block; background: #d29922; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; margin-left: 8px; vertical-align: middle;}
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #010409; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8b949e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Triangular Arbitrage Scanner</h1>
+        <div class="subtitle">Live Monitoring Dashboard • Binance Spot Testnet</div>
+        
+        <div class="card">
+            <h3 style="margin-top: 0; color: #e6edf3;">Live Detection Logs <span id="status-indicator" style="color: #3fb950; font-size: 0.8em; margin-left: 10px;">● Connected</span></h3>
+            <div class="log-box" id="logs">
+                <div style="color: #8b949e; text-align: center; margin-top: 200px;" id="waiting-msg">
+                    Waiting for arbitrage opportunities to be detected...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Socket.io client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const logsContainer = document.getElementById('logs');
+        const waitingMsg = document.getElementById('waiting-msg');
+        const indicator = document.getElementById('status-indicator');
+
+        socket.on('connect', () => {
+            indicator.style.color = '#3fb950';
+            indicator.textContent = '● Connected to Scanner';
+        });
+
+        socket.on('disconnect', () => {
+            indicator.style.color = '#f85149';
+            indicator.textContent = '● Disconnected Server Offline';
+        });
+
+        socket.on('arbitrage_found', (data) => {
+            if (waitingMsg) waitingMsg.remove();
+
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            const timeStr = new Date(data.timestamp).toLocaleTimeString();
+            
+            entry.innerHTML = `
+                <div class="timestamp">[${timeStr}] Arbitrage Detected <span class="sim-tag">TESTNET</span></div>
+                <div class="route">${data.route}</div>
+                <div>Net Profit: <span class="profit">$${data.netProfit} (+${data.profitPercent}%)</span></div>
+                <div class="details">Started with $${data.startAmount} ${data.base}. Ended with $${data.endAmount} ${data.base}.</div>
+                <div class="details" style="color: #7ee787; font-style: italic;">Steps: ${data.steps}</div>
+            `;
+            
+            logsContainer.appendChild(entry);
+            
+            // Auto-scroll to bottom
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        });
+    </script>
+</body>
+</html>
