@@ -21,6 +21,9 @@ class Scanner {
             this.lastLogs = Date.now();
         }
 
+        // Periodically update the dashboard balance
+        executor.fetchBalance(prices);
+
         // Loop through every possible route
         for (const r of this.routes) {
             this.calculateProfit(r, prices);
