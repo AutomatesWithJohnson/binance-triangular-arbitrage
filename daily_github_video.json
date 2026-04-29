@@ -1,0 +1,287 @@
+{
+  "name": "Daily GitHub Repo Video Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Daily GitHub Repo Video Generator\n\n### What This Does\nEvery day at 9am Lagos time:\n1. Picks a random GitHub repo with 50k+ stars\n2. DeepSeek writes a 45-60 second video script\n3. Python builds an MP4 (voiceover + slides + color grade)\n4. Telegram sends you the video file path\n\n### Setup Steps\n\n**1. Python Script**\n   - Make sure `video_builder.py` exists at:\n   - `C:\\Users\\PRECISION\\Desktop\\ANTIGRAVITY\\video_builder.py`\n   - Run once manually to confirm it works\n\n**2. ffmpeg**\n   - Must be on PATH (already installed via winget)\n   - Open a new terminal and confirm: `ffmpeg -version`\n\n**3. Output Folder**\n   - Videos save to: `C:\\Users\\PRECISION\\Desktop\\ANTIGRAVITY\\videos\\`\n   - Created automatically on first run\n\n**4. GitHub Token (Optional)**\n   - Unauthenticated limit: 10 searches/min (fine for daily use)\n   - For higher limits add a token to the Fetch GitHub Repos node header:\n   - `Authorization: Bearer YOUR_TOKEN`\n\n**5. Credentials Already Wired**\n   - DeepSeek: DeepSeek account\n   - Telegram: Virtual assistant urion\n\n### Manual Test\nClick the Schedule Trigger node and hit Execute Workflow.\n\n## Changelog\n- 2026-04-29: Initial build - daily GitHub repo video pipeline",
+        "height": 600,
+        "width": 480,
+        "color": 5
+      },
+      "id": "sticky-setup",
+      "name": "Setup Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-500, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        },
+        "options": {
+          "timezone": "Africa/Lagos"
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily 9am Lagos Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/search/repositories",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "stars:>50000" },
+            { "name": "sort", "value": "updated" },
+            { "name": "order", "value": "desc" },
+            { "name": "per_page", "value": "100" },
+            { "name": "page", "value": "1" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" },
+            { "name": "User-Agent", "value": "AutomatesWithJohnson-VideoBot" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": { "responseFormat": "json" }
+          }
+        }
+      },
+      "id": "fetch-github-repos",
+      "name": "Fetch GitHub Repos Above 50k Stars",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.first().json.items;\nif (!items || items.length === 0) {\n  throw new Error('GitHub API returned no repos. Possible rate limit hit.');\n}\nconst repo = items[Math.floor(Math.random() * items.length)];\nreturn [{\n  json: {\n    repo_name: repo.name,\n    full_name: repo.full_name,\n    description: repo.description || 'No description provided.',\n    language: repo.language || 'Unknown',\n    stars: repo.stargazers_count,\n    topics: repo.topics || [],\n    html_url: repo.html_url,\n    readme_api_url: `https://api.github.com/repos/${repo.full_name}/readme`\n  }\n}];"
+      },
+      "id": "pick-random-repo",
+      "name": "Pick Random Repo From Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.readme_api_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "User-Agent", "value": "AutomatesWithJohnson-VideoBot" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": { "responseFormat": "json" }
+          }
+        }
+      },
+      "id": "fetch-readme",
+      "name": "Fetch Repo README Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoData = $('Pick Random Repo From Results').first().json;\nconst readmeRaw = $input.first().json.content || '';\n\n// Decode base64 README, take first 800 chars\nlet readme = '';\ntry {\n  readme = Buffer.from(readmeRaw.replace(/\\n/g, ''), 'base64').toString('utf-8').substring(0, 800);\n} catch(e) {\n  readme = 'README not available.';\n}\n\nreturn [{\n  json: {\n    ...repoData,\n    readme_excerpt: readme,\n    prompt: `You are writing a 45-60 second punchy video voiceover script about a GitHub repository.\\n\\nWrite ONLY the spoken script - no headers, no markdown, no labels, no stage directions. Just natural flowing text that sounds great when read aloud.\\n\\nRepository: ${repoData.full_name}\\nStars: ${repoData.stars.toLocaleString()}\\nLanguage: ${repoData.language}\\nDescription: ${repoData.description}\\nTopics: ${repoData.topics.join(', ') || 'none listed'}\\nREADME excerpt:\\n${readme}\\n\\nKeep it under 100 words. Open with a strong hook. Explain what the project does and why developers love it. Sound excited but natural.`\n  }\n}];"
+      },
+      "id": "prepare-script-prompt",
+      "name": "Prepare DeepSeek Script Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "id": "generate-script-chain",
+      "name": "Generate Video Script via DeepSeek",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "deepseek-model",
+      "name": "DeepSeek Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [1200, 500],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "0Um124sR7GvHyr0b",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoData = $('Prepare DeepSeek Script Prompt').first().json;\nconst script = $input.first().json.text || '';\n\nif (!script || script.trim().length < 10) {\n  throw new Error('DeepSeek returned an empty script. Aborting video build.');\n}\n\nconst payload = {\n  repo_name: repoData.repo_name,\n  full_name: repoData.full_name,\n  description: repoData.description,\n  language: repoData.language,\n  stars: repoData.stars,\n  topics: repoData.topics,\n  html_url: repoData.html_url,\n  script: script.trim(),\n  output_dir: 'C:\\\\Users\\\\PRECISION\\\\Desktop\\\\ANTIGRAVITY\\\\videos'\n};\n\nconst payloadJson = JSON.stringify(payload);\nconst encoded = Buffer.from(payloadJson).toString('base64');\n\nreturn [{ json: { ...repoData, script: script.trim(), encoded_payload: encoded } }];"
+      },
+      "id": "prepare-video-payload",
+      "name": "Prepare Video Builder Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "command": "python -c \"import json,base64,sys; d=json.loads(base64.b64decode('{{ $json.encoded_payload }}')); open(r'C:\\Users\\PRECISION\\Desktop\\ANTIGRAVITY\\temp_video_input.json','w',encoding='utf-8').write(json.dumps(d,ensure_ascii=False))\" && echo WRITE_OK"
+      },
+      "id": "write-input-file",
+      "name": "Write Input JSON to Disk",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1680, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "command": "python C:\\Users\\PRECISION\\Desktop\\ANTIGRAVITY\\video_builder.py C:\\Users\\PRECISION\\Desktop\\ANTIGRAVITY\\temp_video_input.json"
+      },
+      "id": "build-video",
+      "name": "Run Python Video Builder",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1920, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.stdout || '';\nconst errOut = $input.first().json.stderr || '';\n\nconst match = raw.match(/VIDEO_PATH:(.+)/);\nif (!match) {\n  throw new Error(`Video builder did not return a path. stderr: ${errOut}`);\n}\n\nconst videoPath = match[1].trim();\nconst repoData = $('Prepare Video Builder Payload').first().json;\n\nreturn [{\n  json: {\n    video_path: videoPath,\n    repo_name: repoData.repo_name,\n    full_name: repoData.full_name,\n    stars: repoData.stars,\n    html_url: repoData.html_url,\n    script: repoData.script\n  }\n}];"
+      },
+      "id": "parse-video-output",
+      "name": "Parse Video File Path From Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2160, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "2025200557",
+        "text": "={{ '✅ VIDEO READY\\n\\n📦 Repo: ' + $json.full_name + '\\n⭐ Stars: ' + $json.stars.toLocaleString() + '\\n🔗 ' + $json.html_url + '\\n\\n📁 Saved to:\\n' + $json.video_path + '\\n\\n📝 Script used:\\n' + $json.script }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-success",
+      "name": "Send Telegram Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2400, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "1PIzuK7hDhwMxFET",
+          "name": "Virtual assistant urion"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Workflow Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 560]
+    },
+    {
+      "parameters": {
+        "chatId": "2025200557",
+        "text": "={{ '❌ Daily GitHub Video FAILED\\n\\nWorkflow: ' + $json.workflow.name + '\\nNode: ' + $json.execution.lastNodeExecuted + '\\nError: ' + $json.execution.error.message + '\\nTime: ' + new Date().toISOString() }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-error",
+      "name": "Send Telegram Error Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [240, 560],
+      "credentials": {
+        "telegramApi": {
+          "id": "1PIzuK7hDhwMxFET",
+          "name": "Virtual assistant urion"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 9am Lagos Schedule": {
+      "main": [[{ "node": "Fetch GitHub Repos Above 50k Stars", "type": "main", "index": 0 }]]
+    },
+    "Fetch GitHub Repos Above 50k Stars": {
+      "main": [
+        [{ "node": "Pick Random Repo From Results", "type": "main", "index": 0 }],
+        [{ "node": "Send Telegram Error Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pick Random Repo From Results": {
+      "main": [[{ "node": "Fetch Repo README Content", "type": "main", "index": 0 }]]
+    },
+    "Fetch Repo README Content": {
+      "main": [[{ "node": "Prepare DeepSeek Script Prompt", "type": "main", "index": 0 }]]
+    },
+    "Prepare DeepSeek Script Prompt": {
+      "main": [[{ "node": "Generate Video Script via DeepSeek", "type": "main", "index": 0 }]]
+    },
+    "Generate Video Script via DeepSeek": {
+      "main": [[{ "node": "Prepare Video Builder Payload", "type": "main", "index": 0 }]]
+    },
+    "DeepSeek Chat Model": {
+      "ai_languageModel": [[{ "node": "Generate Video Script via DeepSeek", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Prepare Video Builder Payload": {
+      "main": [[{ "node": "Write Input JSON to Disk", "type": "main", "index": 0 }]]
+    },
+    "Write Input JSON to Disk": {
+      "main": [
+        [{ "node": "Run Python Video Builder", "type": "main", "index": 0 }],
+        [{ "node": "Send Telegram Error Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Run Python Video Builder": {
+      "main": [
+        [{ "node": "Parse Video File Path From Output", "type": "main", "index": 0 }],
+        [{ "node": "Send Telegram Error Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Video File Path From Output": {
+      "main": [[{ "node": "Send Telegram Success Notification", "type": "main", "index": 0 }]]
+    },
+    "Workflow Error Trigger": {
+      "main": [[{ "node": "Send Telegram Error Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "staticData": null
+}
